@@ -1,0 +1,123 @@
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html;charset=utf-8"> 
+<link rel="stylesheet" type="text/css" href="style.css" />
+
+<title>Pear</title>
+
+<script type="text/javascript" src="../Common/webgl-utils.js"></script>
+<script type="text/javascript" src="../Common/initShaders.js"></script>
+<script type="text/javascript" src="../Common/MV.js"></script>
+<script type="text/javascript" src="pear.js"></script> 
+<script type="text/javascript" src="flower.js"></script> 
+<script type="text/javascript" src="skin.js"></script> 
+<script type="text/javascript" src="tail.js"></script>
+
+<script id="vertex-shader" type="x-shader/x-vertex">
+precision mediump float;
+uniform float Time;
+
+attribute vec3 vPosition, vNormal, vTangent, vBitangent;
+attribute vec2 vTexCoords;
+
+varying vec3 fPosition, fNormal, fTangent, fBitangent;
+varying vec2 fTexCoords;
+
+uniform mat4 TrackBallMatrix, ModelMatrix, CameraMatrix;
+uniform mat3 NormalTransformationMatrix;
+
+void main(){
+      
+      vec3 vPosition = vPosition/2.5;
+      float theta = 0.0005*Time;
+      mat3 matrix = mat3(cos(theta), 0.0, sin(theta),
+                        0.0, 1.0, 0.0,
+                        -sin(theta), 0.0, cos(theta));
+      
+      vPosition.y -= 0.3;
+      vPosition = matrix*vPosition;
+      vec4 wPosition = TrackBallMatrix*ModelMatrix*vec4(vPosition,1); //world position
+      vec4 v = CameraMatrix*wPosition;
+      v.z = -v.z; // compensate for left handed coordinate system used by WebGL
+
+      gl_Position = v;
+
+      fPosition = wPosition.xyz; // lighting is being done in world frame
+      fNormal = vec3(TrackBallMatrix*vec4(matrix*NormalTransformationMatrix*vNormal,1));
+      fTexCoords = vTexCoords;
+      fTangent = matrix*vTangent;
+      fBitangent = matrix*vBitangent;
+}
+
+</script>
+
+<script id="fragment-shader" type="x-shader/x-fragment">
+precision mediump float;
+
+varying vec3 fPosition, fNormal, fTangent, fBitangent;
+varying vec2 fTexCoords;
+
+uniform vec3 Ka, Kd, Ks, Ia, Id, Is, LightPosition, CameraPosition;
+uniform float shininess;
+uniform int useNormalMap;
+uniform int useSpecularMap;
+
+uniform sampler2D diffuseMapSampler, normalMapSampler, specularMapSampler;
+
+vec4 computeColor(vec3 position, vec3 normal, vec3 tangent, vec3 bitangent) {
+
+      vec3 lightDir = normalize(LightPosition - position);
+      vec3 viewDir = normalize(CameraPosition - position);
+
+     vec3 ambient = Ia*Ka ;
+	  
+	  vec3 newKd = texture2D(diffuseMapSampler, fTexCoords).xyz;
+
+     float newShininess = shininess;
+
+	  //normal mapping
+	  vec3 nTex = texture2D(normalMapSampler, fTexCoords).xyz;
+	  nTex = 2.0*nTex - vec3(1.0, 1.0, 1.0);
+	  if(useNormalMap == 1){
+	     normal = nTex.x*tangent + nTex.y*bitangent+nTex.z*normal;
+	     normal = normalize(normal); 
+	     // normalizing since tangent, bitangent and normal are not 
+	     // really orthonormal after interpolation.
+	  }
+
+      vec3 diffuse = Id*newKd*max(0.0, dot(normal, lightDir));
+
+      vec3 halfVector = normalize(lightDir + viewDir);
+      vec3 sTex = texture2D(specularMapSampler, fTexCoords).xyz;
+      if(useSpecularMap == 1){
+         newShininess = sTex.x*500.0;
+      }
+      vec3 specular = Is*Ks* pow( max(dot(halfVector, normal), 0.0), newShininess);
+
+      vec3 color = ambient + diffuse + specular;
+     
+      return vec4(color, 1.0);
+
+}
+
+void main(){
+      // Phong shading
+      gl_FragColor = computeColor(fPosition, normalize(fNormal),
+                         normalize(fTangent), normalize(fBitangent)); 
+}
+
+</script>
+</head>
+<body>
+   <canvas id="gl-canvas" width="700" height="700">
+      HTML5 Canvas not supported!
+   </canvas>
+   <p> 
+      <button class ="button1" id = "Toggle Normal Mapping"> Toggle Normal Mapping </button>
+   </p>
+   <p> 
+      <button class ="button2" id = "Toggle Specular Mapping"> Toggle Specular Mapping </button>
+   </p>
+</body>
+</html>
+
